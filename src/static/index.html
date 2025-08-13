@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Estoque em Consignação</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .loading {
+            display: none;
+        }
+        .loading.active {
+            display: inline-block;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #10b981; }
+        .status-offline { background-color: #ef4444; }
+        .status-warning { background-color: #f59e0b; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="fas fa-boxes text-2xl mr-3"></i>
+                    <h1 class="text-2xl font-bold">Controle de Estoque em Consignação</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div id="status-indicator" class="flex items-center">
+                        <span class="status-indicator status-offline"></span>
+                        <span id="status-text">Verificando conexão...</span>
+                    </div>
+                    <button id="sync-btn" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all duration-300">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        Sincronizar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+        <!-- Dashboard Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-md p-6 card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">Total de Produtos</p>
+                        <p id="total-produtos" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fas fa-cube text-blue-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">Destinatários</p>
+                        <p id="total-destinatarios" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <i class="fas fa-hospital text-green-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">Saldo Total</p>
+                        <p id="saldo-total" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="bg-purple-100 p-3 rounded-full">
+                        <i class="fas fa-chart-line text-purple-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">Saldo Baixo</p>
+                        <p id="saldo-baixo" class="text-3xl font-bold text-orange-600">-</p>
+                    </div>
+                    <div class="bg-orange-100 p-3 rounded-full">
+                        <i class="fas fa-exclamation-triangle text-orange-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="bg-white rounded-xl shadow-md mb-8">
+            <div class="border-b border-gray-200">
+                <nav class="flex space-x-8 px-6">
+                    <button class="tab-btn active py-4 px-2 border-b-2 border-blue-500 text-blue-600 font-medium" data-tab="dashboard">
+                        <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
+                    </button>
+                    <button class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="consultas">
+                        <i class="fas fa-search mr-2"></i>Consultas
+                    </button>
+                    <button class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="xml">
+                        <i class="fas fa-file-code mr-2"></i>Processar XML
+                    </button>
+                    <button class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700" data-tab="integracao">
+                        <i class="fas fa-plug mr-2"></i>Integração
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="p-6">
+                <!-- Dashboard Tab -->
+                <div id="dashboard-tab" class="tab-content">
+                    <h3 class="text-xl font-semibold mb-4">Resumo do Estoque</h3>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">Produtos com Saldo Baixo</h4>
+                            <div id="produtos-saldo-baixo" class="space-y-2">
+                                <p class="text-gray-500">Carregando...</p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">Últimas Movimentações</h4>
+                            <div id="ultimas-movimentacoes" class="space-y-2">
+                                <p class="text-gray-500">Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Consultas Tab -->
+                <div id="consultas-tab" class="tab-content hidden">
+                    <h3 class="text-xl font-semibold mb-4">Consultar Estoque</h3>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Consulta por Destinatário -->
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">Por Destinatário (CNPJ)</h4>
+                            <div class="space-y-3">
+                                <input type="text" id="cnpj-input" placeholder="Digite o CNPJ" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <button id="consultar-cnpj" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                    <i class="fas fa-search mr-2"></i>Consultar
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Consulta por Produto -->
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">Por Produto</h4>
+                            <div class="space-y-3">
+                                <input type="text" id="produto-input" placeholder="Digite o código do produto" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <button id="consultar-produto" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors">
+                                    <i class="fas fa-search mr-2"></i>Consultar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resultados -->
+                    <div id="resultados-consulta" class="mt-6 hidden">
+                        <h4 class="font-medium mb-3">Resultados</h4>
+                        <div class="bg-white border rounded-lg overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produto</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lote</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destinatário</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enviado</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Retornado</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faturado</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Saldo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tabela-resultados" class="bg-white divide-y divide-gray-200">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- XML Tab -->
+                <div id="xml-tab" class="tab-content hidden">
+                    <h3 class="text-xl font-semibold mb-4">Processar XML de NF-e</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Cole o conteúdo do XML aqui:</label>
+                            <textarea id="xml-content" rows="10" 
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      placeholder="Cole o conteúdo completo do XML da NF-e aqui..."></textarea>
+                        </div>
+                        <button id="processar-xml" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-cogs mr-2"></i>Processar XML
+                        </button>
+                        
+                        <div id="resultado-xml" class="hidden mt-4 p-4 rounded-lg">
+                            <h4 class="font-medium mb-2">Resultado do Processamento</h4>
+                            <div id="xml-details"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Integração Tab -->
+                <div id="integracao-tab" class="tab-content hidden">
+                    <h3 class="text-xl font-semibold mb-4">Integração com Mainô</h3>
+                    <div class="space-y-6">
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">Status da Integração</h4>
+                            <div id="status-integracao" class="space-y-2">
+                                <p class="text-gray-500">Verificando status...</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium mb-3">Sincronização Manual</h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Dias atrás para sincronizar:</label>
+                                    <input type="number" id="dias-sync" value="7" min="1" max="30" 
+                                           class="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <button id="sincronizar-manual" class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                                    <i class="fas fa-sync-alt mr-2"></i>Sincronizar Agora
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="resultado-sync" class="hidden">
+                            <h4 class="font-medium mb-2">Resultado da Sincronização</h4>
+                            <div id="sync-details" class="bg-white border rounded-lg p-4"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading Modal -->
+    <div id="loading-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-sm mx-4">
+            <div class="flex items-center space-x-3">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span id="loading-text">Processando...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed top-4 right-4 space-y-2 z-40"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
