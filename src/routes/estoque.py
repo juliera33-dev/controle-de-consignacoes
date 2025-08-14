@@ -120,9 +120,9 @@ def sincronizar_maino():
                     else:
                         nfes_entrada += 1
                 else:
-                    erros.append(f"NF {resultado_xml["dados_nfe"]["numero_nf"]}: {resultado_estoque["erro"]}")
+                    erros.append(f"NF {resultado_xml['dados_nfe']['numero_nf']}: {resultado_estoque['erro']}")
             else:
-                erros.append(f"Erro ao processar XML: {resultado_xml["erro"]}")
+                erros.append(f"Erro ao processar XML: {resultado_xml['erro']}")
         
         return jsonify({
             "sucesso": True,
