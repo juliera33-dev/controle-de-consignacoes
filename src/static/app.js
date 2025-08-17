@@ -187,7 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tabelaResultados.innerHTML = ""; // Limpa resultados anteriores
 
         if (saldos.length === 0) {
-            tabelaResultados.innerHTML = `<tr><td colspan="7" class="px-6 py-4 text-center text-gray-500">Nenhum resultado encontrado.</td></tr>`;
+            tabelaResultados.innerHTML = `<tr><td colspan="9" class="px-6 py-4 text-center text-gray-500">Nenhum resultado encontrado.</td></tr>`;
             resultadosConsultaDiv.classList.remove("hidden");
             return;
         }
@@ -199,10 +199,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.descricao_produto} (${item.codigo_produto})</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.numero_lote || "N/A"}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.nome_destinatario || item.cnpj_destinatario}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.quantidade_enviada}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.quantidade_retornada}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.quantidade_faturada}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold ${item.saldo_disponivel > 0 ? 'text-green-600' : 'text-red-600'}">${item.saldo_disponivel}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">${item.nf_saida_numero || "N/A"}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.nf_saida_data_emissao || "N/A"}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.quantidade_consignada_nf || 0}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.quantidade_retornada_nf || 0}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.quantidade_faturada_nf || 0}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold ${item.saldo_disponivel_nf > 0 ? 'text-green-600' : 'text-red-600'}">${item.saldo_disponivel_nf || 0}</td>
             `;
             tabelaResultados.appendChild(row);
         });
@@ -230,8 +232,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (result.sucesso) {
                 syncDetailsDiv.innerHTML = `
                     <p><strong>Status:</strong> <span class="text-green-700">Sucesso</span></p>
-                    <p><strong>XMLs Encontrados:</strong> ${result.xmls_encontrados}</p>
-                    <p><strong>XMLs Processados:</strong> ${result.xmls_processados}</p>
+                    <p><strong>NF-es Encontradas:</strong> ${result.nfes_encontradas}</p>
+                    <p><strong>NF-es Processadas:</strong> ${result.nfes_processadas}</p>
                     <p><strong>NF-es de Saída:</strong> ${result.nfes_saida}</p>
                     <p><strong>NF-es de Entrada:</strong> ${result.nfes_entrada}</p>
                     ${result.erros.length > 0 ? `<p class="text-red-600"><strong>Erros:</strong> ${result.erros.join(", ")}</p>` : ""}

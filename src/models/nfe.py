@@ -41,14 +41,15 @@ class EstoqueConsignacao(db.Model):
     numero_lote = db.Column(db.String(50))
     cnpj_destinatario = db.Column(db.String(14), nullable=False)
     nome_destinatario = db.Column(db.String(255), nullable=False)
-    quantidade_enviada = db.Column(db.Float, default=0.0)
-    quantidade_retornada = db.Column(db.Float, default=0.0)
-    quantidade_faturada = db.Column(db.Float, default=0.0)
-    saldo_disponivel = db.Column(db.Float, default=0.0)
-    nf_saida_id = db.Column(db.Integer, db.ForeignKey('notas_fiscais.id'))
-    nf_entrada_id = db.Column(db.Integer, db.ForeignKey('notas_fiscais.id'))
+    # Saldo agora é específico para a NF de saída
+    quantidade_consignada_nf = db.Column(db.Float, default=0.0) # Quantidade original enviada nesta NF
+    quantidade_retornada_nf = db.Column(db.Float, default=0.0) # Quantidade retornada desta NF
+    quantidade_faturada_nf = db.Column(db.Float, default=0.0) # Quantidade faturada desta NF
+    saldo_disponivel_nf = db.Column(db.Float, default=0.0) # Saldo restante desta NF
+
+    nf_saida_id = db.Column(db.Integer, db.ForeignKey('notas_fiscais.id'), nullable=False) # Link para a NF de saída
 
     def __repr__(self):
-        return f'<Estoque {self.codigo_produto} - {self.cnpj_destinatario} - Saldo: {self.saldo_disponivel}>'
+        return f'<Estoque NF {self.nf_saida_id} - {self.codigo_produto} - {self.cnpj_destinatario} - Saldo: {self.saldo_disponivel_nf}>'
 
 

@@ -1,4 +1,4 @@
-from src.models.user import db
+from src.extensions import db
 from src.models.nfe import NotaFiscal, ItemNotaFiscal, EstoqueConsignacao
 from sqlalchemy.exc import IntegrityError
 
@@ -49,7 +49,8 @@ class EstoqueService:
                     dados_nfe["nome_destinatario"],
                     item_data["quantidade"],
                     tipo_operacao,
-                    nfe
+                    nfe,
+                    dados_nfe.get("nf_saida_referenciada_chave_acesso") # Passa a chave da NF de saída referenciada
                 )
                 itens_processados += 1
 
@@ -63,48 +64,62 @@ class EstoqueService:
             db.session.rollback()
             return {"sucesso": False, "erro": f"Erro ao salvar NF-e e atualizar estoque: {e}"}
 
-    def _atualizar_estoque_consignacao(self, codigo_produto, descricao_produto, numero_lote, cnpj_destinatario, nome_destinatario, quantidade, tipo_operacao, nfe):
-        estoque = EstoqueConsignacao.query.filter_by(
-            codigo_produto=codigo_produto,
-            numero_lote=numero_lote,
-            cnpj_destinatario=cnpj_destinatario
-        ).first()
-
-        if not estoque:
+    def _atualizar_estoque_consignacao(self, codigo_produto, descricao_produto, numero_lote, cnpj_destinatario, nome_destinatario, quantidade, tipo_operacao, nfe, nf_saida_referenciada_chave_acesso=None):
+        # Se for SAIDA, cria um novo registro de estoque por NF
+        if tipo_operacao == "SAIDA":
             estoque = EstoqueConsignacao(
                 codigo_produto=codigo_produto,
                 descricao_produto=descricao_produto,
                 numero_lote=numero_lote,
                 cnpj_destinatario=cnpj_destinatario,
                 nome_destinatario=nome_destinatario,
-                quantidade_enviada=0.0,
-                quantidade_retornada=0.0,
-                quantidade_faturada=0.0,
-                saldo_disponivel=0.0
+                quantidade_consignada_nf=quantidade,
+                saldo_disponivel_nf=quantidade,
+                nf_saida_id=nfe.id
             )
             db.session.add(estoque)
-            db.session.flush()
+        else:
+            # Para ENTRADA_RETORNO, ENTRADA_DEVOLUCAO, ENTRADA_VENDA, precisamos encontrar a NF de SAIDA original
+            # A NF de entrada/retorno/venda DEVE referenciar a NF de saída original (ex: pela chave de acesso)
+            if not nf_saida_referenciada_chave_acesso:
+                raise ValueError("Para operações de ENTRADA (RETORNO, DEVOLUCAO, VENDA), a chave de acesso da NF de saída referenciada é obrigatória.")
 
-        if tipo_operacao == "SAIDA":
-            estoque.quantidade_enviada += quantidade
-            estoque.nf_saida_id = nfe.id
-        elif tipo_operacao == "ENTRADA_RETORNO":
-            estoque.quantidade_retornada += quantidade
-            estoque.nf_entrada_id = nfe.id
-        elif tipo_operacao == "ENTRADA_DEVOLUCAO":
-            estoque.quantidade_retornada += quantidade
-            estoque.nf_entrada_id = nfe.id
-        elif tipo_operacao == "ENTRADA_VENDA":
-            estoque.quantidade_faturada += quantidade
-            estoque.nf_entrada_id = nfe.id
+            # Busca a NF de saída original
+            nf_saida_original = NotaFiscal.query.filter_by(chave_acesso=nf_saida_referenciada_chave_acesso, tipo_operacao="SAIDA").first()
+            if not nf_saida_original:
+                raise ValueError(f"NF de Saída original com chave {nf_saida_referenciada_chave_acesso} não encontrada.")
 
-        estoque.saldo_disponivel = estoque.quantidade_enviada - estoque.quantidade_retornada - estoque.quantidade_faturada
+            # Encontra o registro de EstoqueConsignacao correspondente à NF de saída original
+            estoque = EstoqueConsignacao.query.filter_by(
+                nf_saida_id=nf_saida_original.id,
+                codigo_produto=codigo_produto,
+                numero_lote=numero_lote,
+                cnpj_destinatario=cnpj_destinatario
+            ).first()
+
+            if not estoque:
+                # Isso pode acontecer se a NF de saída original não foi processada ou se os dados não batem
+                raise ValueError(f"Registro de estoque consignado para NF de saída {nf_saida_original.numero_nf} e produto {codigo_produto} não encontrado.")
+
+            if tipo_operacao == "ENTRADA_RETORNO":
+                estoque.quantidade_retornada_nf += quantidade
+            elif tipo_operacao == "ENTRADA_DEVOLUCAO":
+                estoque.quantidade_retornada_nf += quantidade # Devolução simbólica também reduz o saldo consignado
+            elif tipo_operacao == "ENTRADA_VENDA":
+                estoque.quantidade_faturada_nf += quantidade
+
+            estoque.saldo_disponivel_nf = estoque.quantidade_consignada_nf - estoque.quantidade_retornada_nf - estoque.quantidade_faturada_nf
 
     def get_resumo_estoque(self):
+        # Este método agora pode ser mais complexo, somando saldos por produto/destinatário
+        # ou pode ser removido se a granularidade por NF for a principal
         total_produtos = EstoqueConsignacao.query.distinct(EstoqueConsignacao.codigo_produto).count()
         total_destinatarios = EstoqueConsignacao.query.distinct(EstoqueConsignacao.cnpj_destinatario).count()
-        saldo_total_disponivel = db.session.query(db.func.sum(EstoqueConsignacao.saldo_disponivel)).scalar() or 0
-        produtos_saldo_baixo = EstoqueConsignacao.query.filter(EstoqueConsignacao.saldo_disponivel < 10, EstoqueConsignacao.saldo_disponivel > 0).count()
+        saldo_total_disponivel = db.session.query(db.func.sum(EstoqueConsignacao.saldo_disponivel_nf)).scalar() or 0
+        
+        # Produtos com saldo baixo pode ser mais complexo agora, talvez por NF ou por produto geral
+        # Por simplicidade, vamos manter a soma geral por enquanto
+        produtos_saldo_baixo = EstoqueConsignacao.query.filter(EstoqueConsignacao.saldo_disponivel_nf < 10, EstoqueConsignacao.saldo_disponivel_nf > 0).count()
 
         return {
             "total_produtos": total_produtos,
@@ -114,41 +129,61 @@ class EstoqueService:
         }
 
     def get_saldo_por_destinatario(self, cnpj):
+        # Retorna todos os registros de estoque para um CNPJ, incluindo detalhes da NF de saída
         saldos = EstoqueConsignacao.query.filter_by(cnpj_destinatario=cnpj).all()
-        return [{
-            "codigo_produto": s.codigo_produto,
-            "descricao_produto": s.descricao_produto,
-            "numero_lote": s.numero_lote,
-            "quantidade_enviada": s.quantidade_enviada,
-            "quantidade_retornada": s.quantidade_retornada,
-            "quantidade_faturada": s.quantidade_faturada,
-            "saldo_disponivel": s.saldo_disponivel
-        } for s in saldos]
+        results = []
+        for s in saldos:
+            nf_saida = NotaFiscal.query.get(s.nf_saida_id)
+            results.append({
+                "codigo_produto": s.codigo_produto,
+                "descricao_produto": s.descricao_produto,
+                "numero_lote": s.numero_lote,
+                "quantidade_consignada_nf": s.quantidade_consignada_nf,
+                "quantidade_retornada_nf": s.quantidade_retornada_nf,
+                "quantidade_faturada_nf": s.quantidade_faturada_nf,
+                "saldo_disponivel_nf": s.saldo_disponivel_nf,
+                "nf_saida_numero": nf_saida.numero_nf if nf_saida else None,
+                "nf_saida_data_emissao": nf_saida.data_emissao.strftime("%Y-%m-%d") if nf_saida else None
+            })
+        return results
 
     def get_saldo_por_produto(self, codigo_produto):
+        # Retorna todos os registros de estoque para um produto, incluindo detalhes da NF de saída
         saldos = EstoqueConsignacao.query.filter_by(codigo_produto=codigo_produto).all()
-        return [{
-            "cnpj_destinatario": s.cnpj_destinatario,
-            "nome_destinatario": s.nome_destinatario,
-            "numero_lote": s.numero_lote,
-            "quantidade_enviada": s.quantidade_enviada,
-            "quantidade_retornada": s.quantidade_retornada,
-            "quantidade_faturada": s.quantidade_faturada,
-            "saldo_disponivel": s.saldo_disponivel
-        } for s in saldos]
+        results = []
+        for s in saldos:
+            nf_saida = NotaFiscal.query.get(s.nf_saida_id)
+            results.append({
+                "cnpj_destinatario": s.cnpj_destinatario,
+                "nome_destinatario": s.nome_destinatario,
+                "numero_lote": s.numero_lote,
+                "quantidade_consignada_nf": s.quantidade_consignada_nf,
+                "quantidade_retornada_nf": s.quantidade_retornada_nf,
+                "quantidade_faturada_nf": s.quantidade_faturada_nf,
+                "saldo_disponivel_nf": s.saldo_disponivel_nf,
+                "nf_saida_numero": nf_saida.numero_nf if nf_saida else None,
+                "nf_saida_data_emissao": nf_saida.data_emissao.strftime("%Y-%m-%d") if nf_saida else None
+            })
+        return results
 
     def validar_disponibilidade_faturamento(self, cnpj_destinatario, itens_faturamento):
         erros = []
         for item_req in itens_faturamento:
-            estoque = EstoqueConsignacao.query.filter_by(
+            # Para validar faturamento, agora precisamos saber qual NF de saída está sendo faturada
+            # ou somar o saldo total disponível para o produto/lote/destinatário
+            # Por simplicidade, vamos somar o saldo total para o produto/lote/destinatário
+            total_saldo_produto = db.session.query(db.func.sum(EstoqueConsignacao.saldo_disponivel_nf)).filter_by(
                 cnpj_destinatario=cnpj_destinatario,
                 codigo_produto=item_req["codigo_produto"],
                 numero_lote=item_req["numero_lote"]
-            ).first()
+            ).scalar() or 0
 
-            if not estoque or estoque.saldo_disponivel < item_req["quantidade"]:
+            if total_saldo_produto < item_req["quantidade"]:
                 erros.append(f"Produto {item_req["codigo_produto"]} (Lote: {item_req["numero_lote"]}) não possui saldo suficiente para faturamento no destinatário {cnpj_destinatario}.")
         
         return {"sucesso": len(erros) == 0, "erros": erros}
+
+
+
 
 
